@@ -8,7 +8,6 @@ import math
 import tempfile
 import shutil
 import yaml
-import queue
 import torch
 import cv2
 from PIL import Image
@@ -68,7 +67,7 @@ def extract_frames_from_video(video_path, output_dir, start_frame, end_frame, st
 
 parser = argparse.ArgumentParser(description="Pi3 demo with viser for 3D visualization")
 parser.add_argument(
-    "--input", type=str, default="examples/videos/pyramid.mp4", help="Path to input (folder of images or a video file)"
+    "--input", type=str, default="data/examples/office", help="Path to input (folder of images or a video file)"
 )
 parser.add_argument(
     "--input2", type=str, default=None, help="Path to input (folder of images or a video file)"
@@ -99,19 +98,19 @@ parser.add_argument(
     "--load", type=str, default=None, help="Path to folder or .pt file to load pre-computed inference results from"
 )
 parser.add_argument("--seq_name", type=str, default=None, help="Name of the sequence for saving results")
-parser.add_argument("--subsample", type=int, default=1, help="Subsample the point cloud for visualization by this factor")
+parser.add_argument("--subsample", type=int, default=2, help="Subsample the point cloud for visualization by this factor")
 parser.add_argument("--video_width", type=int, default=320, help="Width of the video display in the GUI")
 parser.add_argument("--skip_viser", action="store_true", help="Skip viser visualization and only run inference")
 parser.add_argument(
     "--model_name",
     type=str,
-    default="yyfz233/Pi3",
+    default="ckpts/LoGeR_star/latest.pt",
     help="Name of the model to load from Hugging Face Hub or a local path to a checkpoint."
 )
-parser.add_argument("--config", type=str, default=None, help="Path to a yaml config file for model initialization.")
+parser.add_argument("--config", type=str, default="ckpts/LoGeR_star/original_config.yaml", help="Path to a yaml config file for model initialization.")
 parser.add_argument("--resolution", type=list, default=None, help="Target resolution for input images (shorter side).")
-parser.add_argument("--window_size", type=int, default=None, help="Window size for non-causal inference (-1 for full sequence).")
-parser.add_argument("--overlap_size", type=int, default=None, help="Overlap size for sliding window inference.")
+parser.add_argument("--window_size", type=int, default=32, help="Window size for non-causal inference (-1 for full sequence).")
+parser.add_argument("--overlap_size", type=int, default=3, help="Overlap size for sliding window inference.")
 parser.add_argument("--sim3", action="store_true", help="Use sim3 transformation for TTT.")
 parser.add_argument("--sim3_scale_mode", type=str, default="median", choices=["median", "trimmed_mean", "median_all", "trimmed_mean_all", "sim3_avg1"], help="Scale estimation mode for Sim3.")
 parser.add_argument("--reset_every", type=int, default=None, help="Reset TTT / adapter state every N windows (0 disables).")
@@ -411,8 +410,13 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
+    # Fail fast for local LoGeR checkpoints/configs when files are missing.
+    if args.config and not os.path.isfile(args.config):
+        raise FileNotFoundError(f"Config file not found: {args.config}")
+    if not os.path.isfile(args.model_name):
+        raise FileNotFoundError(f"Checkpoint file not found: {args.model_name}")
+
     predictions_dict = None
-    all_image_names = []
     temp_frame_dirs = {}
     input_indices = {}
     image_folder_for_sky = None
@@ -749,90 +753,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-class WindowedImageLoader:
-    def __init__(self, image_paths, window_size, overlap_size, target_resolution, device="cuda"):
-        self.image_paths = image_paths
-        self.window_size = window_size
-        self.overlap_size = overlap_size
-        self.target_resolution = target_resolution
-        self.device = device
-        
-        self.queue = queue.Queue(maxsize=3) # Buffer a few windows
-        self.stop_event = threading.Event()
-        self.thread = threading.Thread(target=self._worker)
-        self.all_chunks = [] # To store loaded chunks for later reconstruction
-        
-        # Calculate windows
-        N = len(image_paths)
-        if window_size <= 0 or window_size >= N:
-            self.windows = [(0, N)]
-        else:
-            self.windows = []
-            step = max(window_size - overlap_size, 1)
-            for start_idx in range(0, N, step):
-                end_idx = min(start_idx + window_size, N)
-                if end_idx - start_idx >= overlap_size or (end_idx == N and start_idx < N):
-                    self.windows.append((start_idx, end_idx))
-                if end_idx == N:
-                    break
-        
-        self.thread.start()
-
-    def _worker(self):
-        for i, (start_idx, end_idx) in enumerate(self.windows):
-            if self.stop_event.is_set():
-                break
-            
-            paths = self.image_paths[start_idx:end_idx]
-            
-            chunk_tensor = load_images_from_paths(
-                paths, 
-                Target_W=self.target_resolution[0] if self.target_resolution else None, 
-                Target_H=self.target_resolution[1] if self.target_resolution else None,
-                verbose=(i==0) # Only print for the first chunk to avoid spam
-            )
-            
-            chunk_tensor = chunk_tensor.to(self.device)
-            
-            is_last = (i == len(self.windows) - 1)
-            self.queue.put((chunk_tensor, i, start_idx, end_idx, is_last))
-
-        self.queue.put(None) # Sentinel
-
-    def __iter__(self):
-        while True:
-            item = self.queue.get()
-            if item is None:
-                break
-            
-            chunk_tensor, window_idx, start_idx, end_idx, is_last = item
-            
-            # Store for later
-            self.all_chunks.append((start_idx, end_idx, chunk_tensor))
-            
-            yield chunk_tensor, window_idx, start_idx, end_idx, is_last
-
-    def get_full_images_tensor(self):
-        N = len(self.image_paths)
-        if not self.all_chunks:
-            return None
-            
-        sample = self.all_chunks[0][2]
-        # sample shape: (Nw, C, H, W)
-        C, H, W = sample.shape[1:]
-        
-        full_tensor = torch.zeros((N, C, H, W), dtype=sample.dtype, device=sample.device)
-        
-        for start, end, chunk in self.all_chunks:
-            full_tensor[start:end] = chunk
-            
-        return full_tensor
-
-    def stop(self):
-        self.stop_event.set()
-        try:
-            while not self.queue.empty():
-                self.queue.get_nowait()
-        except:
-            pass
-        self.thread.join()
