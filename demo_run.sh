@@ -1,14 +1,25 @@
 #!/bin/bash
 
-# Usage: bash demo_run.sh [CUDA_DEVICE] [INPUT_PATH]
-# Example: bash demo_run.sh 0 /path/to/your/data
+# Usage:
+#   bash demo_run.sh [DEVICE_OR_CUDA_INDEX] [INPUT_PATH]
+# Examples:
+#   bash demo_run.sh auto data/examples/office
+#   bash demo_run.sh mps data/examples/office
+#   bash demo_run.sh 0 /path/to/your/data
 
 # Get arguments
-CUDA_DEVICE=$1
+DEVICE_ARG=${1:-auto}
 INPUT_PATH=$2
 
-if [ -n "$CUDA_DEVICE" ]; then
-    export CUDA_VISIBLE_DEVICES=$CUDA_DEVICE
+if [[ "$DEVICE_ARG" =~ ^[0-9]+$ ]]; then
+    export CUDA_VISIBLE_DEVICES=$DEVICE_ARG
+    DEVICE=auto
+else
+    DEVICE=$DEVICE_ARG
+fi
+
+if [ "$(uname -s)" = "Darwin" ]; then
+    export XFORMERS_DISABLED=1
 fi
 
 # choose from LoGeR, LoGeR_star
@@ -26,17 +37,18 @@ for ckpt_name in "${ckpt_list[@]}"; do
 
     echo "Running evaluation..."
 
-    python  demo_viser.py \
+    uv run python demo_viser.py \
         --input "$input_path" \
         --config "$config_path" \
         --model_name "$model_path" \
+        --device "$DEVICE" \
         --start_frame 0 \
         --end_frame 50 \
         --stride 1 \
         --window_size 32 \
         --overlap_size 3 \
         --subsample 2 \
-        --share \
+        --share
         # --reset_every 5  # turned on for extreme long sequences (>1k frames)
 
 

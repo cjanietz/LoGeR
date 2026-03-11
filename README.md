@@ -16,9 +16,13 @@ LoGeR processes long video streams in chunks with a hybrid memory design to impr
 ```bash
 git clone https://github.com/junyi42/LoGeR
 cd LoGeR
-conda create -n loger python=3.11 cmake=3.14.0
-conda activate loger
-pip install -r requirements.txt
+uv sync --extra demo
+```
+
+On macOS, the demo can run with MPS acceleration when available:
+
+```bash
+XFORMERS_DISABLED=1 uv run python demo_viser.py --device mps --input data/examples/office --config ckpts/LoGeR/original_config.yaml --model_name ckpts/LoGeR/latest.pt
 ```
 
 ## Checkpoint Download
@@ -42,6 +46,12 @@ wget -O ckpts/LoGeR_star/latest.pt "https://huggingface.co/Junyi42/LoGeR/resolve
 For demo usage, please directly refer to:
 
 - [`demo_run.sh`](demo_run.sh)
+
+Quick start with uv:
+
+```bash
+bash demo_run.sh auto data/examples/office
+```
 
 ## Evaluation
 

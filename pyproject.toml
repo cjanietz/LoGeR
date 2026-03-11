@@ -1,0 +1,46 @@
+[project]
+name = "loger"
+version = "0.1.0"
+description = "LoGeR demo and evaluation environment"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "accelerate",
+    "einops",
+    "gradio",
+    "huggingface-hub",
+    "matplotlib",
+    "natsort",
+    "numpy==1.26.4",
+    "opencv-python",
+    "pillow",
+    "plyfile",
+    "pyyaml",
+    "requests",
+    "roma",
+    "safetensors",
+    "scipy",
+    "torch==2.6.0",
+    "torchvision==0.21.0",
+    "tqdm",
+    "trimesh",
+    "viser",
+]
+
+[project.optional-dependencies]
+demo = [
+    "onnxruntime; platform_system != 'Darwin'",
+    "onnxruntime-silicon; platform_system == 'Darwin'",
+]
+eval = [
+    "imageio",
+    "omegaconf",
+    "open3d",
+    "pillow-heif",
+]
+xformers = [
+    "xformers; platform_system != 'Darwin'",
+]
+
+[tool.uv]
+package = false
