@@ -633,12 +633,6 @@ def main():
     device = resolve_torch_device(args.device)
     print(f"Using device: {device}")
 
-    # Fail fast for local LoGeR checkpoints/configs when files are missing.
-    if args.config and not os.path.isfile(args.config):
-        raise FileNotFoundError(f"Config file not found: {args.config}")
-    if not os.path.isfile(args.model_name):
-        raise FileNotFoundError(f"Checkpoint file not found: {args.model_name}")
-
     predictions_dict = None
     raw_model_predictions = None
     temp_frame_dirs = {}
@@ -711,6 +705,12 @@ def main():
             )
 
     if predictions_dict is None:
+        # Fail fast for local LoGeR checkpoints/configs when inference is required.
+        if args.config and not os.path.isfile(args.config):
+            raise FileNotFoundError(f"Config file not found: {args.config}")
+        if not os.path.isfile(args.model_name):
+            raise FileNotFoundError(f"Checkpoint file not found: {args.model_name}")
+
         model = load_pi3_model(
             args.model_name, args.config, args.pi3x, args.pi3x_metric
         )
